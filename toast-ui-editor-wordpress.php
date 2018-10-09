@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name: Toast UI Editor WordPress
- * Version:     0.0.0
+ * Version:     1.0.0
  * Author:      Changwoo Nam
- * Author URI:  mailto://cs.chwnam@gmail.com
+ * Author URI:  mailto://changwoo@ivynet.co.kr
  * Plugin URI:  https://github.com/changwoo-ivy/toast-ui-editor-wordpress
  */
 
@@ -12,7 +12,7 @@ function tuew_get_js_sources() {
 	return array(
 		'tuew_jquery'            => 'assets/bower_components/jquery/dist/jquery.js',
 		'tuew_markdown_it'       => 'assets/bower_components/markdown-it/dist/markdown-it.js',
-		'tuew_to_mark'           => 'assets/bower_components/toMark/dist/toMark.js',
+		'tuew_to_mark'           => 'assets/bower_components/to-mark/dist/to-mark.js',
 		'tuew_tui_code_snippet'  => 'assets/bower_components/tui-code-snippet/dist/tui-code-snippet.js',
 		'tuew_codemirror'        => 'assets/bower_components/codemirror/lib/codemirror.js',
 		'tuew_highlight_pack'    => 'assets/bower_components/highlightjs/highlight.pack.js',
@@ -31,92 +31,136 @@ function tuew_get_css_sources() {
 }
 
 
-add_action( 'wp_enqueue_scripts', 'tuew_enqueue_scripts', 9 );
+add_action( 'admin_enqueue_scripts', 'tuew_enqueue_scripts', 9 );
 
-function tuew_enqueue_scripts() {
+function tuew_enqueue_scripts( $hook ) {
 
-	$js_sources  = tuew_get_js_sources();
-	$css_sources = tuew_get_css_sources();
-	$url         = plugin_dir_url( __FILE__ );
+	if ( $hook == 'post.php' ) {
+		$js_sources  = tuew_get_js_sources();
+		$css_sources = tuew_get_css_sources();
+		$url         = plugin_dir_url( __FILE__ );
 
-	foreach ( $js_sources as $handle => $src ) {
-		if ( $handle === 'tuew_jquery' ) {
-			wp_register_script( $handle, $url . $src, array( 'jquery' ), '2.2.4', FALSE );
-		} else {
-			wp_register_script( $handle, $url . $src, array(), FALSE, FALSE );
+		foreach ( $js_sources as $handle => $src ) {
+			if ( $handle === 'tuew_jquery' ) {
+				wp_register_script( $handle, $url . $src, array( 'jquery' ), '3.3.1', FALSE );
+			} else {
+				wp_register_script( $handle, $url . $src, array(), NULL, FALSE );
+			}
 		}
-	}
 
-	foreach ( $css_sources as $handle => $src ) {
-		wp_register_style( $handle, $url . $src );
-	}
+		foreach ( $css_sources as $handle => $src ) {
+			wp_register_style( $handle, $url . $src, array(), NULL );
+		}
 
-	wp_register_script( 'tuew', $url . 'assets/tuew.js', array_keys( $js_sources ), FALSE, FALSE );
-	wp_register_style( 'tuew', $url . 'assets/tuew.css', array_keys( $css_sources ) );
+		wp_register_script( 'tuew', $url . 'assets/tuew.js', array_keys( $js_sources ), '1.0.0', TRUE );
+		wp_register_style( 'tuew', $url . 'assets/tuew.css', array_keys( $css_sources ), '1.0.0' );
+
+		add_action( 'admin_footer', 'tuew_admin_editor' );
+	}
 }
 
 
-function tuew_editor( $id, $attrs = array(), $props = array(), $echo = TRUE ) {
+function tuew_admin_editor( $attrs = array() ) {
+	global $post_ID;
 
-	if ( ! wp_script_is( 'tuew', 'enqueued' ) ) {
+	$attrs = wp_parse_args(
+		$attrs,
+		array(
+			'editor_id'              => 'tuew',
+			'input_name'             => 'tuew',
+			'wrapper_tag'            => 'div',
+			'wrapper_attrs'          => array(),
+			'editor_options'         => array(),
+			'extra_inline_js_after'  => '',
+			'extra_inline_js_before' => '',
+			'extra_inline_css'       => '',
+			'append_after'           => 'textarea#content',
+		)
+	);
+
+	if ( ! is_array( $attrs['editor_options'] ) ) {
+		$attrs['editor_options'] = array();
+	}
+
+	$attrs['editor_options'] = wp_parse_args(
+		$attrs['editor_options'],
+		array(
+			'initialEditType' => 'markdown',
+			'initialValue'    => get_post_meta( $post_ID, 'tuew_markdown', TRUE ),
+			'previewStyle'    => 'vertical',
+			'height'          => '500px',
+			'exts'            => [],
+		)
+	);
+
+	if ( ! $attrs['wrapper_tag'] ) {
+		return;
+	}
+
+	$wrapper_attrs       = $attrs['wrapper_attrs'];
+	$wrapper_attrs['id'] = $attrs['editor_id'];
+
+	if ( ! isset( $attrs['editor_options']['el'] ) ) {
+		$attrs['editor_options']['el'] = sanitize_key( $attrs['wrapper_tag'] ) . '#' . sanitize_key( $attrs['editor_id'] );
+	}
+
+	// template <div id="tuew" .... ><input name="tuew" type="hidden" value=""></div>
+	$template = '<' . sanitize_key( $attrs['wrapper_tag'] );
+	foreach ( $wrapper_attrs as $key => $value ) {
+		$template .= ' ' . sanitize_key( $key ) . '="' . esc_attr( $value ) . '"';
+	}
+	$template .= '><input type="hidden" name="' . $attrs['input_name'] . '" value="">';
+	$template .= '</' . sanitize_key( $attrs['wrapper_tag'] ) . '>';
+
+	wp_localize_script(
+		'tuew',
+		'tuew',
+		array(
+			'template'      => $template,
+			'editorOptions' => $attrs['editor_options'],
+			'appendAfter'   => $attrs['append_after'],
+			'inputName'     => $attrs['input_name'],
+			'content'       => '#content',
+		)
+	);
+
+	if ( ! wp_script_is( 'tuew' ) ) {
 		wp_enqueue_script( 'tuew' );
 	}
 
-	$id            = esc_attr( $id );
-	$props_encoded = $props ? json_encode( $props ) : '{}';
+	if ( $attrs['extra_inline_js_before'] ) {
+		wp_add_inline_script( 'tuew', $attrs['extra_inline_js_before'], 'before' );
+	}
 
 	wp_add_inline_script(
 		'tuew',
-		"\$(document).ready(function($){\$('div#{$id}').tuiEditor($props_encoded);});"
+		"
+            (function (\$) {
+                \$(document).ready(function() {
+                    initToastUiEditor(tuew);
+                });
+            })(jQuery);",
+		'after'
 	);
 
-	if ( ! wp_style_is( 'tuew', 'enqueued' ) ) {
+	if ( $attrs['extra_inline_js_after'] ) {
+		wp_add_inline_script( 'tuew', $attrs['extra_inline_js_after'], 'after' );
+	}
+
+	if ( ! wp_style_is( 'tuew' ) ) {
 		wp_enqueue_style( 'tuew' );
 	}
 
-	$attributes = array();
-	foreach ( $attrs as $key => $val ) {
-		$key = sanitize_key( $key );
-		switch ( $key ) {
-			case 'href':
-				$val = esc_url( $val );
-				break;
-			case 'class':
-				$val = sanitize_html_class( $val );
-				break;
-			default:
-				$val = esc_attr( $val );
-				break;
-		}
-		$attributes[] = "{$key}=\"{$val}\"";
+	if ( $attrs['extra_inline_css'] ) {
+		wp_add_inline_style( 'tuew', $attrs['extra_inline_css'] );
 	}
-	$attributes_implode = implode( ' ', $attributes );
-
-	$html = "<div id=\"{$id}\" {$attributes_implode}></div>";
-
-	if ( $echo ) {
-		echo $html;
-		return NULL;
-	}
-
-	return $html;
 }
 
+add_action( 'save_post', 'tuew_save_post', 10, 1 );
 
-add_shortcode( 'tui_editor', 'tuew_output_editor' );
-
-function tuew_output_editor() {
-	ob_start();
-	include( __DIR__ . '/templates/test-editor-form.php' );
-	return ob_get_clean();
-}
-
-
-add_action( 'admin_post_test_editor', 'tuew_dump_post_data' );
-
-function tuew_dump_post_data() {
-	if ( wp_verify_nonce( $_POST['_wpnonce'], 'test-form-action' ) ) {
-		var_dump( $_POST );
+function tuew_save_post( $post_id ) {
+	if ( isset( $_POST['tuew'] ) ) {
+		$tuew = $_POST['tuew'];
+		update_post_meta( $post_id, 'tuew_markdown', $tuew );
 	}
-	exit;
 }

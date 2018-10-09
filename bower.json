@@ -1,6 +1,6 @@
 {
   "name": "toaster-ui-editor-wordpress",
   "dependencies": {
-    "tui-editor": "^1.0.1"
+    "tui-editor": "^1.2.6"
   }
 }

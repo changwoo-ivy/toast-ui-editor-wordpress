@@ -1,0 +1,15 @@
+.mce-tinymce.mce-container.mce-panel {
+    display: none;
+}
+
+#wp-content-editor-tools {
+    display: none;
+}
+
+#wp-word-count {
+    display: none;
+}
+
+.tui-tooltip > .arrow {
+    display: none;
+}
